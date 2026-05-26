@@ -81,7 +81,7 @@ GET-only, unauthenticated. Interactive docs at `/docs`. Relevant endpoints:
 ### API gotchas (must be respected in ETL)
 - **FIPS are strings with leading zeros.** Never parse to int anywhere — not in Python, not in DuckDB, not in JS. Read CSVs with FIPS columns forced to string.
 - **`fips-value` is the canonical pivot source.** Use `download-all` only to bootstrap quickly; prefer `fips-value` for the richer per-measure metadata (`state`, `source`, `aac`).
-- **`aac` companion field**: present alongside each `value`. Treat as the annual average count accompanying an age-adjusted rate **until verified** against a county with a known published value (see Phase 1 acceptance). Carry it through; label it provisionally in the UI.
+- **`aac` companion field**: present alongside each `value`. Confirmed as the **average annual count** accompanying the age-adjusted rate. Verified Phase 1.0 against State Cancer Profiles for Denver County / All Cancer Sites incidence (ECCO 404.1 rate / 2746 aac vs SCP 400.3 rate / 2765 aac — within 1%, attributable to year-range differences between the two snapshots). See `etl/src/co_cancer_atlas_etl/aac_probe.py` for the re-runnable check.
 - **Factors**: some measures (e.g. HPV has `sex`, several have `RE`/`Sex`/`Age`) expand into multiple series. The catalog defines allowed values and the default. See §4 for how factors map into the data model.
 - **Suppressed / missing values**: cancer rates are frequently suppressed for small counts → expect nulls. Correlation must be pairwise-complete; clustering must impute or drop.
 - **Units gate visualizations.** `MeasureUnit` ∈ {percent, count, rate, dollar_amount, rank, ordinal, categorical, least_most}. Only continuous numeric units (percent, rate, count, dollar_amount) are valid for Pearson correlation and clustering. Categorical/ordinal/rank measures are choropleth-only.
@@ -122,7 +122,7 @@ Tidy long; the complete record including all factor combinations.
 | `fips` | string | region key (county/tract FIPS; health-region id as string) |
 | `measure_id` | string | FK to catalog (includes factor suffix where applicable) |
 | `value` | double | nullable (suppressed → null) |
-| `aac` | double | nullable; provisional meaning (see gotchas) |
+| `aac` | double | nullable; average annual count (verified Phase 1.0) |
 
 ### `{level}_wide.parquet`  (`county_wide`, `tract_wide`)
 Pivoted primary-series matrix for correlation/clustering. One row per region.
@@ -316,10 +316,21 @@ and retrieve county geometry, all without guessing measure names.
 
 ---
 
-## 9. Open question to resolve in Phase 1
+## 9. Resolved questions
 
-The meaning of `aac` (alongside `value` and `state_aac` in the cancer measure
-responses) is inferred as annual average count but not confirmed. Phase 1's
-`verify.py` must spot-check it against a published State Cancer Profiles figure and
-finalize the interpretation note here before the choropleth tooltip and any
-downstream labeling rely on it.
+### `aac` meaning — resolved Phase 1.0 (2026-05-26)
+
+`aac` is the **average annual count** accompanying the age-adjusted rate.
+Verified by `etl/src/co_cancer_atlas_etl/aac_probe.py`, which compares the
+ECCO response for Denver County (FIPS 08031), `scpincidence / "All Cancer
+Sites"`, against the published State Cancer Profiles figure for the same
+slice (2018–2022, all races, both sexes, all ages, all stages):
+
+| field | ECCO | SCP | delta |
+|---|---:|---:|---:|
+| value (rate / 100k) | 404.1 | 400.3 | 0.9% |
+| aac (annual count)  | 2746.0 | 2765.0 | 0.7% |
+
+The ≈1% delta is attributable to year-range differences between snapshots.
+The probe will be re-run as part of `verify.py` (Phase 1.5) to catch drift
+on future snapshot refreshes.
