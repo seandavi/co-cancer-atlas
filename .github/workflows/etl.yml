@@ -1,0 +1,43 @@
+# Refresh the data snapshot from the ECCO API.
+# Stub for Phase 1 — the snapshot/verify entry points don't exist yet.
+# Opens a PR on diff so a human eyeballs catalog/measure deltas before merge.
+
+name: etl-refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * 1"  # Mondays 09:00 UTC
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: etl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: build snapshot
+        run: uv run python -m co_cancer_atlas_etl.snapshot
+      - name: verify
+        run: uv run python -m co_cancer_atlas_etl.verify
+      - name: open PR on data changes
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "data: refresh snapshot ${{ github.run_id }}"
+          title: "data: refresh snapshot"
+          body: |
+            Automated snapshot refresh from the ECCO API.
+
+            Review the diff in `data/` (catalog deltas, row counts) before merge.
+          branch: data/refresh
+          add-paths: |
+            data/**
