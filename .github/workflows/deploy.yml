@@ -27,10 +27,8 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
         working-directory: app
-      - name: stage data for serving
-        run: |
-          mkdir -p app/public/data
-          cp -R data/. app/public/data/ 2>/dev/null || true
+      # app/public/data is a symlink to ../../data committed to the repo;
+      # Vite follows it through to dist/data/ during build.
       - run: npm run build
         working-directory: app
       - name: deploy to Cloudflare Pages
