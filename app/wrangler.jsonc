@@ -1,0 +1,24 @@
+{
+  // Cloudflare Worker config. Used by @opennextjs/cloudflare + wrangler.
+  // The Worker bundles the Next.js build under `.open-next/worker.js` and
+  // serves static assets (including the snapshot Parquet) from the
+  // `public/` directory + an additional `data/` asset binding below.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "co-cancer-atlas",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-05-26",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Asset binding for static files served by the Worker. OpenNext puts
+  // the Next.js `public/` and built assets here; the snapshot Parquet
+  // ships via a symlink (app/public/data -> ../../data) so the same
+  // binding serves them at /data/*.
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash"
+  },
+
+  // Observability defaults; the application reads no specific binding.
+  "observability": { "enabled": true }
+}
