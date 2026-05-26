@@ -25,7 +25,7 @@ from tenacity import (
 )
 
 BASE_URL = "https://api.coe-ecco.org"
-DEFAULT_CONCURRENCY = 4
+DEFAULT_CONCURRENCY = 8
 DEFAULT_TIMEOUT = 30.0
 RETRY_ATTEMPTS = 5
 RETRY_MIN_SECONDS = 0.5
