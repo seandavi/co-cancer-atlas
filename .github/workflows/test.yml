@@ -1,0 +1,46 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  etl:
+    name: etl (ruff + pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: etl
+    steps:
+      - uses: actions/checkout@v4
+      - name: install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: sync
+        run: uv sync --frozen
+      - name: lint
+        run: uv run ruff check .
+      - name: format check
+        run: uv run ruff format --check .
+      - name: pytest
+        run: uv run pytest
+
+  app:
+    name: app (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - name: typecheck + build
+        run: npm run build
