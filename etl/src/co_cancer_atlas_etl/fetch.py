@@ -138,32 +138,6 @@ class AsyncEccoClient:
             f"/stats/{level}/{dataset}/as-csv", measure=measure
         )
 
-    # ----- bulk dump (primary source for values) -------------------------
-
-    @retry(
-        reraise=True,
-        retry=retry_if_exception(_is_retryable),
-        stop=stop_after_attempt(RETRY_ATTEMPTS),
-        wait=wait_exponential(
-            multiplier=RETRY_MIN_SECONDS, max=RETRY_MAX_SECONDS
-        ),
-    )
-    async def download_dump(self) -> bytes:
-        """Pull /stats/download-all — a zip of every stats table as CSV.
-
-        ~16 MB. One request replaces hundreds of per-measure calls. The
-        CSVs are pre-expanded across factor combinations (sex/stage/race/age
-        appear as columns), which is exactly the long-format shape we want.
-
-        The trade is metadata: the zip does not carry `aac` (the average
-        annual count) or the per-measure `state` reference value. For
-        cancer datasets where those matter, follow up with fips_value().
-        """
-        async with self._sem:
-            r = await self._http.get("/stats/download-all")
-            r.raise_for_status()
-            return r.content
-
     # ----- bulk helpers (where async + concurrency pay off) --------------
 
     async def fips_value_many(

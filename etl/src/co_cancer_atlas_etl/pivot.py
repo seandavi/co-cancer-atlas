@@ -263,14 +263,3 @@ def apply_state_values(
     )
 
 
-# ----- helpers retained for fallback / scripts ---------------------------
-
-def regions_from_iterable(
-    regions: Iterable[tuple[str, str]],
-) -> pl.DataFrame:
-    """Build a (fips, name) frame from any iterable of (fips, name) pairs."""
-    fips, names = zip(*regions, strict=True) if regions else ([], [])
-    return pl.DataFrame(
-        {"fips": list(fips), "name": list(names)},
-        schema={"fips": pl.Utf8, "name": pl.Utf8},
-    ).unique(subset=["fips"], keep="first").sort("fips")
