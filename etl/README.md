@@ -12,11 +12,20 @@ the contract and acceptance criteria.
 
 ```bash
 uv sync
-uv run python -c "import httpx, duckdb"   # phase 0 smoke test
 
-# Phase 1 (not yet implemented):
-uv run python -m co_cancer_atlas_etl.snapshot   # full snapshot → ../data/
-uv run python -m co_cancer_atlas_etl.verify     # acceptance checks
+# Full snapshot (catalog + values + geometry) → ../data/
+uv run snapshot
+uv run snapshot --data-dir /tmp/test --concurrency 4
+
+# Acceptance checks against ../data/
+uv run verify
+
+# Re-run the standalone SCP comparison (SPEC §9 aac question)
+uv run aac-probe
+
+# Tests + lint
+uv run pytest
+uv run ruff check .
 ```
 
 ## Layout
@@ -24,16 +33,16 @@ uv run python -m co_cancer_atlas_etl.verify     # acceptance checks
 ```
 etl/
   pyproject.toml
-  config.toml                  # base url, datasets, levels, concurrency  (phase 1)
   src/co_cancer_atlas_etl/
     __init__.py
-    client.py                  # ECCO API client (ported from prototype)
-    fetch.py                   # discovery + fips-value pulls           (phase 1)
-    catalog.py                 # /stats/measures → catalog.parquet      (phase 1)
-    pivot.py                   # long → wide via DuckDB                 (phase 1)
-    geo.py                     # GeoJSON → TopoJSON (FIPS as feature id) (phase 1)
-    verify.py                  # acceptance checks (incl. aac probe)    (phase 1)
-    snapshot.py                # orchestrator                           (phase 1)
+    client.py                  # synchronous ECCO client (used by aac_probe)
+    fetch.py                   # AsyncEccoClient: concurrency + retry
+    catalog.py                 # /stats/measures → catalog.parquet
+    pivot.py                   # fips-value → long + wide
+    geo.py                     # /counties + /tracts → TopoJSON
+    aac_probe.py               # SCP comparison (Phase 1.0)
+    verify.py                  # SPEC §7 Phase 1 acceptance checks
+    snapshot.py                # orchestrator
   tests/
 ```
 
