@@ -71,7 +71,7 @@ GET-only, unauthenticated. Interactive docs at `/docs`. Relevant endpoints:
 **Catalog / convenience**
 - `GET /stats/measures` → master catalog: every measure with `label`, `unit`, `source`, `source_url`, and `factors` (allowed values + defaults).
 - `GET /stats/by-county/{fips}` → everything for one county, nested by category.
-- `GET /stats/download-all` → **zip of every stats table as CSV** (bulk bootstrap).
+- `GET /stats/download-all` → **zip of every stats table as CSV — primary value source for the snapshot.** ~16 MB, ~290 CSVs. Each CSV row already includes the factor columns (`sex`, `stage`, `race`, `age`) pre-expanded, which is the long-format shape we want. **Does not include** `aac` or per-measure `state`; for those, follow up with `fips-value` on the cancer datasets only.
 
 **Datasets by level** (verify against live `/stats/measures` at build time):
 - County: `scpincidence`, `scpdeaths`, `scpincidencetrend`, `scpdeathstrend`, `cancerdisparitiesindex`, `rfandscreening`, `hpv`, `radon`, `uvexposure`, `disparities`, `sociodemographics`, `economy`, `environment`, `housingtrans`, `ucccresponders`.
@@ -80,7 +80,7 @@ GET-only, unauthenticated. Interactive docs at `/docs`. Relevant endpoints:
 
 ### API gotchas (must be respected in ETL)
 - **FIPS are strings with leading zeros.** Never parse to int anywhere — not in Python, not in DuckDB, not in JS. Read CSVs with FIPS columns forced to string.
-- **`fips-value` is the canonical pivot source.** Use `download-all` only to bootstrap quickly; prefer `fips-value` for the richer per-measure metadata (`state`, `source`, `aac`).
+- **Hybrid pull strategy.** `download-all` is the primary source for values (one request, all measures, all factor combinations pre-expanded as long rows). `fips-value` is the secondary enrichment pass, called only for the cancer datasets (`scpincidence`, `scpdeaths`, `scpincidencetrend`, `scpdeathstrend`) where we need `aac` for the tooltip and `state` for the reference annotation. The catalog (`/stats/measures`) supplies `label`, `unit`, `source`, `source_url`, and factor definitions — those don't need to come from `fips-value`.
 - **`aac` companion field**: present alongside each `value`. Confirmed as the **average annual count** accompanying the age-adjusted rate. Verified Phase 1.0 against State Cancer Profiles for Denver County / All Cancer Sites incidence (ECCO 404.1 rate / 2746 aac vs SCP 400.3 rate / 2765 aac — within 1%, attributable to year-range differences between the two snapshots). See `etl/src/co_cancer_atlas_etl/aac_probe.py` for the re-runnable check.
 - **Factors**: some measures (e.g. HPV has `sex`, several have `RE`/`Sex`/`Age`) expand into multiple series. The catalog defines allowed values and the default. See §4 for how factors map into the data model.
 - **Suppressed / missing values**: cancer rates are frequently suppressed for small counts → expect nulls. Correlation must be pairwise-complete; clustering must impute or drop.
