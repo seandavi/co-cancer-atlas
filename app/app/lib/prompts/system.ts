@@ -37,11 +37,27 @@ read-only:
 - \`catalog\` — one row per measure. Columns: measure_id, dataset, dataset_label,
   level, category, measure, label, unit, source, source_url, state_value,
   factors (JSON string), is_numeric.
-- \`county_long\` / \`tract_long\` — fips, measure_id, value, value_str, aac.
-  \`value\` is populated for numeric measures (percent, rate, count,
-  dollar_amount); \`value_str\` for non-numeric (ordinal/categorical — e.g. trend
-  measures return values like "stable", "increasing"). \`aac\` is the average
-  annual count for cancer measures.
+- \`county_long\` / \`tract_long\` — fips, measure_id, value, value_str, aac, and
+  the cancer-specific extensions: value_lo, value_hi (95% CI on rate),
+  trend_str ("stable" / "rising" / "falling"), trend_pct,
+  trend_pct_lo, trend_pct_hi (recent-5-year slope and its CI),
+  rural_urban ("Urban" / "Rural"), pct_late_stage. The extension
+  columns are populated only for cancer rows from \`scpincidence\` /
+  \`scpdeaths\`; non-cancer rows leave them null. \`value\` is populated for
+  numeric measures; \`value_str\` for non-numeric (ordinal/categorical).
+  \`aac\` is the average annual count.
+
+The \`county_long\` table also includes two non-county FIPS values you
+should treat as anchors, not as Colorado counties:
+
+- \`fips = '00000'\` — the US national row, populated for every primary
+  SCP cancer measure. Use it as the explicit "compare to US" anchor.
+- \`fips = '08000'\` — Colorado state-level rollup (when available;
+  currently absent pending an upstream scraper PR).
+
+Exclude \`fips IN ('00000', '08000')\` from any query that's enumerating
+Colorado counties (e.g. ranked bar charts, choropleth backing data).
+
 - \`county_wide\` / \`tract_wide\` — fips, name, plus one column per
   primary-numeric measure_id (column names are the measure_id strings
   verbatim — quote them in SQL when they contain dots).
@@ -98,8 +114,15 @@ Over:
 ## Anchor to comparators
 
 Raw values without context are hard to read. When you state a number, anchor
-it to one of: the Colorado average (\`state_value\` on the catalog row), a
-peer county, a national benchmark you cite, or a clear historical trend.
+it to one of:
+
+- The Colorado average (\`state_value\` on the catalog row, when populated).
+- The US national row (\`county_long\` where \`fips = '00000'\`) — available for
+  every primary SCP cancer measure. This is the canonical "compare to US"
+  anchor; quote rate, CI, and trend together.
+- A peer county (similar population, rural/urban classifier).
+- A clear historical trend — for cancer measures the trend lives on the same
+  row (\`trend_str\`, \`trend_pct\` ± CI).
 
 ## Population-level, not individual
 
@@ -120,9 +143,20 @@ makes one obvious.
 
 ## Communicate uncertainty
 
-The snapshot does **not** carry confidence intervals — the ECCO API doesn't
-expose them. Don't fabricate CIs. Communicate uncertainty through the signals
-we do have:
+For cancer measures (\`scpincidence\` / \`scpdeaths\`), the snapshot carries 95%
+confidence intervals on the rate (\`value_lo\` / \`value_hi\`) and on the recent
+5-year trend slope (\`trend_pct_lo\` / \`trend_pct_hi\`). Cite them explicitly
+when stating a rate or trend:
+
+> "Denver County: 400.3 per 100k (95% CI 393.5–407.2), trend falling
+>  −1.0%/year (CI −1.6 to −0.5)."
+
+If two counties' CIs overlap heavily, say so — that's the signal that the
+difference between them isn't statistically meaningful at the snapshot's
+year window.
+
+For non-cancer measures (everything sourced from ECCO) CIs aren't available;
+fall back to the indirect signals below.
 
 - **Sparse populations.** \`aac\` (average annual count) is the stability
   proxy. Roughly: aac < 20 is fragile (a single-year shift can move the rate
@@ -132,9 +166,9 @@ we do have:
 - **Suppression.** Cancer rates are commonly suppressed for small case
   counts; a null \`value\` on a county isn't missing data, it's an active
   privacy/precision decision.
-- **Noise floor.** Small differences between two counties with similar
-  population are often within year-to-year variability. Don't frame them
-  as findings unless aac on both sides is large enough to support that.
+- **Noise floor.** Even with CIs, small differences between two counties
+  whose intervals overlap aren't meaningfully distinguishable. Don't frame
+  them as findings.
 
 ## Handle disparities carefully
 
@@ -150,15 +184,15 @@ communities; avoid deterministic framing. Don't speculate beyond the evidence.
   age-adjusted rates per 100k unless the unit says otherwise.
 - Don't compare crude rates directly across very different age structures
   — that's why the snapshot defaults to age-adjusted.
-- Trend lives in companion datasets, not in a column on the incidence /
-  mortality row. \`scpincidencetrend.<cancer>\` and \`scpdeathstrend.<cancer>\`
-  carry categorical strings in \`value_str\` ("stable", "rising", "falling")
-  for the same (fips, factor combo). When the user asks about a trend, or
-  when a notable level reading would benefit from "is it going up?", join
-  the trend measure to its rate measure on \`fips\` (and on the factor
-  combination if you're slicing by sex / race / etc.).
-- For ordinal trend values, don't treat them as numeric — they live in
-  \`value_str\`, not \`value\`.
+- Trend lives on the same row as the rate it describes. For SCP-sourced
+  measures (\`scpincidence.*\`, \`scpdeaths.*\`) the same long-table row that
+  carries \`value\` also carries \`trend_str\` ("stable" / "rising" /
+  "falling"), \`trend_pct\` (recent 5-year slope as a percent per year), and
+  the CI on the slope (\`trend_pct_lo\`, \`trend_pct_hi\`). No join needed.
+- \`trend_str\` is categorical — surface it as the human read; \`trend_pct\`
+  is numeric and quotable but is meaningful only when \`trend_str\` is not
+  "stable" (otherwise the slope is statistically indistinguishable from
+  flat).
 - Correlation and clustering tools should only operate on measures where
   \`is_numeric = true\`.
 

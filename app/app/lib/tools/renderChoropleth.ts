@@ -68,10 +68,15 @@ export const renderChoropleth = tool({
     }
 
     const safeId = fullId.replace(/'/g, "''");
+    // Cancer measures (scpincidence / scpdeaths) carry a national anchor
+    // row at FIPS 00000 — useful for chat-time comparison, but it would
+    // stretch the color scale and inflate the region counts here. Filter
+    // to Colorado FIPS (08***) only.
     const rows = await queryAll<LongRow>(
       `select fips, value, value_str, aac
          from ${measure.level}_long
-        where measure_id = '${safeId}'`,
+        where measure_id = '${safeId}'
+          and fips like '08%'`,
     );
 
     if (rows.length === 0) {
