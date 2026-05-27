@@ -153,6 +153,7 @@ _KEEP_COLUMNS: tuple[str, ...] = (
     "cancer",
     "age",
     "state_fips",
+    "locale_type",
     "percent_of_cases_with_late_stage",
 )
 
@@ -170,11 +171,26 @@ _NUMERIC_RAW_COLUMNS: tuple[str, ...] = (
 
 
 def _read_release_csv(url: str) -> pl.DataFrame:
-    """Read a SCP release CSV via DuckDB httpfs, filtered to CO + national.
+    """Read a SCP release CSV via DuckDB httpfs, filtered to CO + state rollups.
 
     DuckDB reads gzipped CSVs over HTTPS in place — no local download.
     The filter happens server-side in DuckDB so we only materialise the
-    ~30k rows we actually need (vs the ~1.3M total).
+    ~30k-100k rows we actually need (vs the ~1.3M total).
+
+    The filter keeps three slices:
+
+    1. All Colorado county rows (``state_fips='08' AND areatype='county'``)
+       — the choropleth + county-rank backing data.
+    2. Every state-level rollup (``areatype='state'``) plus the standalone
+       national rollup (``areatype='national'``) — chat-tool anchors for
+       "how does CO compare to other states / the US" patterns. Each is
+       one row per (cancer x factor combo), so ~50k-100k extra rows.
+
+    The ``areatype='state'`` slice only exists in releases that scrape
+    state-level data — see scraper PR #10. On older releases the filter
+    is still valid; it just yields zero state rows. Bumping
+    ``DEFAULT_SCP_RELEASE`` to a post-PR-#10 release is what actually
+    pulls them in.
 
     Reads every column as VARCHAR and converts numerics with TRY_CAST in
     the same query — SCP CSVs mix empty strings, suppressed-value
@@ -205,10 +221,18 @@ def _read_release_csv(url: str) -> pl.DataFrame:
         else:
             select_parts.append(f'"{col}"')
 
+    # Filter on locale_type, not areatype. The scraper normalises
+    # locale_type to {county, state, national, other} based on the FIPS
+    # pattern, whereas areatype is the raw display string ("By County",
+    # "By State/...", which can drift if the SCP site relabels options).
     sql = f"""
         SELECT {", ".join(select_parts)}
         FROM read_csv_auto('{url}', all_varchar=true)
-        WHERE state_fips IN ('08', '00')
+        WHERE (
+                  (state_fips = '08' AND locale_type = 'county')
+               OR locale_type = 'state'
+               OR locale_type = 'national'
+              )
           AND TRY_CAST(
               NULLIF(NULLIF(age_adjusted_rate_per_100_000, ''), '*') AS DOUBLE
           ) IS NOT NULL

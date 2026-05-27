@@ -89,11 +89,19 @@ SCP CSV carries strictly more than ECCO did:
 - A national row per (cancer × factor combo) at FIPS `00000`, giving every
   measure a built-in "compare to US" anchor
 
-Colorado state-level rollups (FIPS `08000`) are not yet present in the
-upstream release; pending [scraper PR #10][scraper-pr] which adds
-`areatype` iteration to the scrape loop. Until that lands and a new
-release ships, the chat tool should anchor SCP measures to the national
-row rather than the state row.
+State-level rollups (FIPS `XX000` for every state) are added to the
+long table from the same release as soon as it carries `areatype='state'`
+rows; the ETL filter (see `_read_release_csv` in `scp.py`) keeps:
+
+- All Colorado county rows.
+- Every state-level rollup (Colorado + 49 others + DC) — these light up
+  the chat tool's "compare to other states" pattern.
+- The standalone US national rollup at FIPS `00000`.
+
+Until [scraper PR #10][scraper-pr]'s next release ships, no state rows
+exist in the source CSV; the filter is forward-compatible (yields zero
+state rows on older releases) and starts pulling them automatically
+once `DEFAULT_SCP_RELEASE` is bumped to a post-PR-#10 tag.
 
 The SCP release tag is pinned in `etl/src/co_cancer_atlas_etl/scp.py`
 (`DEFAULT_SCP_RELEASE`) so snapshots are reproducible; bump alongside
@@ -191,7 +199,7 @@ Tidy long; complete record across all factor combinations the source has data fo
 
 | column | type | notes |
 |---|---|---|
-| `fips` | string | region key (5-digit county, 11-digit tract). Cancer rows additionally carry FIPS `00000` (US national) and, when present, `08000` (CO state). |
+| `fips` | string | region key (5-digit county, 11-digit tract). Cancer rows additionally carry FIPS `00000` (US national) and, when source release supports it, `XX000` for every US state — including `08000` for Colorado. |
 | `measure_id` | string | FK to catalog (includes factor suffix where applicable) |
 | `value` | double | nullable; populated when measure is numeric |
 | `value_str` | string | nullable; populated when measure is non-numeric (ordinal/rank/etc.) |
@@ -222,8 +230,16 @@ Only `is_numeric` primary series become columns. Column names are the
 `measure_id` strings verbatim (quote them in SQL).
 
 ### Geometry
-- `co_counties.topojson`, `co_tracts.topojson` — TopoJSON. Feature `id`
-  property is the FIPS string matching `fips` in the long/wide tables.
+- `co_counties.topojson`, `co_tracts.topojson` — TopoJSON of Colorado
+  counties / tracts. Feature `id` is the FIPS string matching `fips`
+  in the long/wide tables.
+- `us_states.topojson` — TopoJSON of all 50 states + DC + territories,
+  from [us-atlas][us-atlas] at 10 m resolution (~115 KB). Feature `id`
+  is the 2-digit state FIPS string (e.g. `'08'` for Colorado). For
+  joins to state-level cancer rows (FIPS `XX000`), transform with
+  `LEFT(fips, 2)` on the long-table side.
+
+[us-atlas]: https://github.com/topojson/us-atlas
 
 ### Hosting
 Total snapshot is ~2.5 MB. Bundled as Worker static assets and read via the
