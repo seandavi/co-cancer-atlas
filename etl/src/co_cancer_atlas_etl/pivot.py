@@ -25,13 +25,12 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
-from collections.abc import Iterable
 from typing import Any
 
 import polars as pl
 
-from .fetch import AsyncEccoClient
 from .catalog import factor_suffix
+from .fetch import AsyncEccoClient
 
 
 def _enumerate_factor_combos(

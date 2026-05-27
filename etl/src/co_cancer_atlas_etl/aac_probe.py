@@ -43,8 +43,8 @@ SCP_REFERENCE_URL = (
     "?stateFIPS=08&areatype=county&cancer=001&race=00&sex=0"
     "&age=001&stage=999&year=0&type=incd&output=1"
 )
-SCP_REFERENCE_RATE = 400.3      # cases per 100,000, age-adjusted
-SCP_REFERENCE_COUNT = 2765.0    # average annual count
+SCP_REFERENCE_RATE = 400.3  # cases per 100,000, age-adjusted
+SCP_REFERENCE_COUNT = 2765.0  # average annual count
 
 # Tolerance is tight — we're reading the same source SCP publishes. Any
 # >1% delta is a code or pinning bug, not a real epidemiologic shift.
@@ -64,8 +64,7 @@ def probe(data_dir: Path | None = None) -> int:
 
     long_df = pl.read_parquet(long_path)
     row = long_df.filter(
-        (pl.col("fips") == ANCHOR_FIPS)
-        & (pl.col("measure_id") == ANCHOR_MEASURE_ID)
+        (pl.col("fips") == ANCHOR_FIPS) & (pl.col("measure_id") == ANCHOR_MEASURE_ID)
     )
     if row.height == 0:
         print(

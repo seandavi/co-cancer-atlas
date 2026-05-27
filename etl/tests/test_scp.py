@@ -122,9 +122,7 @@ def test_build_long_rows_uses_per_cancer_default_for_primary_id() -> None:
     # The single Cervix row should land on the primary measure_id —
     # no #sex=Female suffix, because sex=Female *is* the per-cancer
     # default for Cervix.
-    assert long_df.get_column("measure_id").to_list() == [
-        "scpincidence.Cervix"
-    ]
+    assert long_df.get_column("measure_id").to_list() == ["scpincidence.Cervix"]
 
 
 def test_build_long_rows_emits_suffix_for_non_default_combo() -> None:

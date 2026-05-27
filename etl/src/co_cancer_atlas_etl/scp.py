@@ -15,7 +15,7 @@ Per-row, the SCP release carries strict supersets of what ECCO exposed:
   slope (``recent_trend``, ``recent_5_year_trend_in_rate``, ``…_lo/_hi``).
   The two trend datasets collapse into columns on the rate row.
 - Rural / urban classifier (``2023_rural_urban_continuum_codes…``)
-- A national row (FIPS ``00000``) per cancer × factor combo — gives the
+- A national row (FIPS ``00000``) per cancer x factor combo — gives the
   chat tool a real "compare to US" anchor instead of inferring one.
 
 What this module produces
@@ -124,9 +124,7 @@ def normalize_sex(scp_sex: str) -> str:
 def _normalize_factors(df: pl.DataFrame) -> pl.DataFrame:
     """Apply factor-value normalization shared across all SCP consumers."""
     return df.with_columns(
-        pl.col("sex")
-        .map_elements(normalize_sex, return_dtype=pl.Utf8)
-        .alias("sex"),
+        pl.col("sex").map_elements(normalize_sex, return_dtype=pl.Utf8).alias("sex"),
     )
 
 
@@ -199,14 +197,13 @@ def _read_release_csv(url: str) -> pl.DataFrame:
     select_parts: list[str] = []
     for col in _KEEP_COLUMNS:
         if col not in available:
-            select_parts.append(f"NULL AS \"{col}\"")
+            select_parts.append(f'NULL AS "{col}"')
         elif col in _NUMERIC_RAW_COLUMNS:
             select_parts.append(
-                f"TRY_CAST(NULLIF(NULLIF(\"{col}\", ''), '*') AS DOUBLE) "
-                f"AS \"{col}\""
+                f"TRY_CAST(NULLIF(NULLIF(\"{col}\", ''), '*') AS DOUBLE) AS \"{col}\""
             )
         else:
-            select_parts.append(f"\"{col}\"")
+            select_parts.append(f'"{col}"')
 
     sql = f"""
         SELECT {", ".join(select_parts)}
@@ -229,9 +226,7 @@ def _non_default(
     factor_values: dict[str, str], defaults: dict[str, str]
 ) -> dict[str, str]:
     """Project a factor combination down to only non-default values."""
-    return {
-        k: v for k, v in factor_values.items() if v != defaults.get(k)
-    }
+    return {k: v for k, v in factor_values.items() if v != defaults.get(k)}
 
 
 def _build_long_rows(
@@ -265,9 +260,7 @@ def _build_long_rows(
         }
         cancer_defaults = defaults_by_cancer[row["cancer"]]
         suffix = factor_suffix(_non_default(combo, cancer_defaults))
-        measure_ids.append(
-            f"{primary_measure_id(dataset, row['cancer'])}{suffix}"
-        )
+        measure_ids.append(f"{primary_measure_id(dataset, row['cancer'])}{suffix}")
 
     return df.with_columns(pl.Series("measure_id", measure_ids)).select(
         pl.col("fips"),
@@ -281,11 +274,10 @@ def _build_long_rows(
         pl.col("recent_5_year_trend_in_rate").cast(pl.Float64).alias("trend_pct"),
         pl.col("lower_ci_trend_in_rate").cast(pl.Float64).alias("trend_pct_lo"),
         pl.col("upper_ci_trend_in_rate").cast(pl.Float64).alias("trend_pct_hi"),
-        pl.col("2023_rural_urban_continuum_codesrural_urban_note")
-            .alias("rural_urban"),
+        pl.col("2023_rural_urban_continuum_codesrural_urban_note").alias("rural_urban"),
         pl.col("percent_of_cases_with_late_stage")
-            .cast(pl.Float64, strict=False)
-            .alias("pct_late_stage"),
+        .cast(pl.Float64, strict=False)
+        .alias("pct_late_stage"),
     )
 
 
@@ -349,9 +341,7 @@ def _build_catalog_rows(
                 "source": meta["source"],
                 "source_url": meta["source_url"],
                 "state_value": None,
-                "factors": json.dumps(
-                    factors, sort_keys=True, ensure_ascii=False
-                ),
+                "factors": json.dumps(factors, sort_keys=True, ensure_ascii=False),
                 "is_numeric": "rate" in NUMERIC_UNITS,
             }
         )
@@ -391,12 +381,8 @@ def build_scp(
             cancer: {axis: factors[axis]["default"] for axis in factors}
             for cancer, factors in factor_universe.items()
         }
-        catalog_rows.extend(
-            _build_catalog_rows(normalized, dataset, factor_universe)
-        )
-        long_frames.append(
-            _build_long_rows(normalized, dataset, defaults_by_cancer)
-        )
+        catalog_rows.extend(_build_catalog_rows(normalized, dataset, factor_universe))
+        long_frames.append(_build_long_rows(normalized, dataset, defaults_by_cancer))
 
     # Catalog frame (schema mirrors :mod:`.catalog`).
     catalog_schema = {
