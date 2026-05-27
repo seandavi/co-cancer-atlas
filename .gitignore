@@ -28,4 +28,8 @@ Thumbs.db
 # Adjust once Phase 1 settles on what gets committed vs hosted on R2.
 data/raw/
 data/cache/
+data/.cache/
 data/*.zip
+
+# Claude Code local state
+.claude/
