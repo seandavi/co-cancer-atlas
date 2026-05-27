@@ -121,6 +121,15 @@ def normalize_sex(scp_sex: str) -> str:
     return _SEX_MAP.get(scp_sex, scp_sex)
 
 
+def _normalize_factors(df: pl.DataFrame) -> pl.DataFrame:
+    """Apply factor-value normalization shared across all SCP consumers."""
+    return df.with_columns(
+        pl.col("sex")
+        .map_elements(normalize_sex, return_dtype=pl.Utf8)
+        .alias("sex"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # CSV → polars
 # ---------------------------------------------------------------------------
@@ -216,26 +225,36 @@ def _read_release_csv(url: str) -> pl.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def _non_default(factor_values: dict[str, str]) -> dict[str, str]:
+def _non_default(
+    factor_values: dict[str, str], defaults: dict[str, str]
+) -> dict[str, str]:
     """Project a factor combination down to only non-default values."""
     return {
-        k: v for k, v in factor_values.items() if v != _FACTOR_DEFAULTS.get(k)
+        k: v for k, v in factor_values.items() if v != defaults.get(k)
     }
 
 
 def _build_long_rows(
-    df: pl.DataFrame, dataset: str
+    df: pl.DataFrame,
+    dataset: str,
+    defaults_by_cancer: dict[str, dict[str, str]],
 ) -> pl.DataFrame:
     """Materialise long-table rows + measure_id for every SCP row.
 
     Adds the cancer-specific nullable extensions (CI, trend, rural/urban,
     late-stage). One row per (fips, cancer, factor combo) — same grain
     as the source CSV after we filter to CO + national.
-    """
-    df = df.with_columns(
-        pl.col("sex").map_elements(normalize_sex, return_dtype=pl.Utf8).alias("sex"),
-    )
 
+    ``defaults_by_cancer`` maps cancer label → axis → per-cancer
+    default value. Sex-specific cancers (Cervix, Prostate, Breast)
+    derive their own per-cancer ``sex`` default since the global "All"
+    doesn't appear in their rows; this keeps the primary measure_id
+    suffix-free.
+
+    Expects sex to already be normalised — callers must run the input
+    through :func:`_normalize_factors` first so factor_universe and
+    long_rows agree on what "All" means.
+    """
     measure_ids = []
     for row in df.iter_rows(named=True):
         combo = {
@@ -244,7 +263,8 @@ def _build_long_rows(
             "sex": row["sex"],
             "stage": row["stage"],
         }
-        suffix = factor_suffix(_non_default(combo))
+        cancer_defaults = defaults_by_cancer[row["cancer"]]
+        suffix = factor_suffix(_non_default(combo, cancer_defaults))
         measure_ids.append(
             f"{primary_measure_id(dataset, row['cancer'])}{suffix}"
         )
@@ -275,6 +295,12 @@ def _factor_universe(df: pl.DataFrame) -> dict[str, dict[str, dict[str, Any]]]:
     For each cancer (= measure), record every value seen across each
     axis. The catalog format expects ``{factor: {label, default, values:
     {code: label}}}`` (see SPEC §4 + ECCO catalog).
+
+    The default per axis is the global default *if it appears in the
+    observed values for this cancer*, otherwise the alphabetically
+    first observed value. This handles sex-specific cancers (Cervix /
+    Prostate / Breast) where the global default ``sex='All'`` isn't
+    among the published rows.
     """
     axes = ("age", "race", "sex", "stage")
     out: dict[str, dict[str, dict[str, Any]]] = {}
@@ -286,8 +312,10 @@ def _factor_universe(df: pl.DataFrame) -> dict[str, dict[str, dict[str, Any]]]:
             values = sorted(
                 v for v in group.get_column(axis).unique().to_list() if v is not None
             )
+            global_default = _FACTOR_DEFAULTS[axis]
+            default = global_default if global_default in values else values[0]
             factors[axis] = {
-                "default": _FACTOR_DEFAULTS[axis],
+                "default": default,
                 "label": axis.capitalize(),
                 "values": {v: v for v in values},
             }
@@ -296,11 +324,15 @@ def _factor_universe(df: pl.DataFrame) -> dict[str, dict[str, dict[str, Any]]]:
 
 
 def _build_catalog_rows(
-    df: pl.DataFrame, dataset: str
+    df: pl.DataFrame,
+    dataset: str,
+    factor_universe: dict[str, dict[str, dict[str, Any]]],
 ) -> list[dict[str, Any]]:
     """Build catalog rows for every cancer observed in the SCP frame."""
     meta = _DATASETS[dataset]
-    factor_universe = _factor_universe(df)
+    # df is unused after factor_universe is computed by the caller, but
+    # keep the parameter for symmetry with _build_long_rows.
+    _ = df
 
     rows: list[dict[str, Any]] = []
     for cancer, factors in factor_universe.items():
@@ -353,8 +385,18 @@ def build_scp(
         raw = _read_release_csv(url)
         if raw.is_empty():
             continue
-        catalog_rows.extend(_build_catalog_rows(raw, dataset))
-        long_frames.append(_build_long_rows(raw, dataset))
+        normalized = _normalize_factors(raw)
+        factor_universe = _factor_universe(normalized)
+        defaults_by_cancer = {
+            cancer: {axis: factors[axis]["default"] for axis in factors}
+            for cancer, factors in factor_universe.items()
+        }
+        catalog_rows.extend(
+            _build_catalog_rows(normalized, dataset, factor_universe)
+        )
+        long_frames.append(
+            _build_long_rows(normalized, dataset, defaults_by_cancer)
+        )
 
     # Catalog frame (schema mirrors :mod:`.catalog`).
     catalog_schema = {
