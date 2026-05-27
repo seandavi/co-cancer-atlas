@@ -66,9 +66,7 @@ def check_catalog_units(catalog: pl.DataFrame) -> CheckResult:
 
 
 def check_is_numeric_matches_unit(catalog: pl.DataFrame) -> CheckResult:
-    expected = catalog.with_columns(
-        expected=pl.col("unit").is_in(NUMERIC_UNITS)
-    )
+    expected = catalog.with_columns(expected=pl.col("unit").is_in(NUMERIC_UNITS))
     mismatches = expected.filter(pl.col("is_numeric") != pl.col("expected"))
     if mismatches.height:
         return CheckResult(
@@ -119,7 +117,9 @@ def check_long_measure_ids_in_catalog(
     long: pl.DataFrame, catalog: pl.DataFrame, label: str
 ) -> CheckResult:
     catalog_ids = set(catalog.get_column("measure_id").to_list())
-    long_primary_ids = {mid.split("#", 1)[0] for mid in long.get_column("measure_id").to_list()}
+    long_primary_ids = {
+        mid.split("#", 1)[0] for mid in long.get_column("measure_id").to_list()
+    }
     orphans = long_primary_ids - catalog_ids
     if orphans:
         return CheckResult(
@@ -138,9 +138,9 @@ def check_wide_columns_are_primary_numeric(
     wide: pl.DataFrame, catalog: pl.DataFrame, level: str
 ) -> CheckResult:
     primary_numeric = set(
-        catalog.filter(
-            (pl.col("level") == level) & pl.col("is_numeric")
-        ).get_column("measure_id").to_list()
+        catalog.filter((pl.col("level") == level) & pl.col("is_numeric"))
+        .get_column("measure_id")
+        .to_list()
     )
     wide_cols = set(wide.columns) - {"fips", "name"}
     extras = wide_cols - primary_numeric
@@ -167,29 +167,80 @@ def check_scp_national_row_present(
     silently degrades.
     """
     primary_scp = set(
-        catalog.filter(
-            pl.col("dataset").is_in(["scpincidence", "scpdeaths"])
-        )
+        catalog.filter(pl.col("dataset").is_in(["scpincidence", "scpdeaths"]))
         .get_column("measure_id")
         .to_list()
     )
     national_ids = set(
-        long.filter(pl.col("fips") == "00000")
-        .get_column("measure_id")
-        .to_list()
+        long.filter(pl.col("fips") == "00000").get_column("measure_id").to_list()
     )
     missing = primary_scp - {mid.split("#", 1)[0] for mid in national_ids}
     if missing:
         return CheckResult(
             "every primary SCP measure has a national row",
             False,
-            f"{len(missing)} measures missing FIPS 00000; "
-            f"e.g. {sorted(missing)[:3]}",
+            f"{len(missing)} measures missing FIPS 00000; e.g. {sorted(missing)[:3]}",
         )
     return CheckResult(
         "every primary SCP measure has a national row",
         True,
         f"{len(primary_scp)} primary SCP measures all anchor to US",
+    )
+
+
+def check_scp_state_rollups_present(
+    long: pl.DataFrame, catalog: pl.DataFrame
+) -> CheckResult:
+    """When state rollups are present, every SCP measure should have a CO row.
+
+    Gated: only runs the strict check if the snapshot actually contains
+    any state-level rows (FIPS matching ``XX000`` where ``XX != '00'``).
+    Pre-PR-#10 releases have no state-level data; the filter in
+    :func:`.scp._read_release_csv` keeps them out, so this check is a
+    silent no-op on those releases.
+
+    Once the upstream release includes state rollups, the check
+    promotes to "every primary SCP measure must also have a CO state
+    row (FIPS ``08000``) for the chat tool's 'compare to CO state'
+    pattern to work".
+    """
+    state_rows = long.filter(
+        pl.col("fips").str.ends_with("000")
+        & (pl.col("fips") != "00000")
+        & pl.col("fips").str.len_chars().eq(5)
+    )
+    if state_rows.height == 0:
+        return CheckResult(
+            "SCP state rollups (gated)",
+            True,
+            "no state-level rows in snapshot — gated check skipped "
+            "(bump DEFAULT_SCP_RELEASE once upstream PR #10 releases)",
+        )
+
+    primary_scp = set(
+        catalog.filter(pl.col("dataset").is_in(["scpincidence", "scpdeaths"]))
+        .get_column("measure_id")
+        .to_list()
+    )
+    co_state_primary_ids = {
+        mid.split("#", 1)[0]
+        for mid in long.filter(pl.col("fips") == "08000")
+        .get_column("measure_id")
+        .to_list()
+    }
+    missing = primary_scp - co_state_primary_ids
+    if missing:
+        return CheckResult(
+            "SCP state rollups (gated): CO state row per measure",
+            False,
+            f"{len(missing)} primary SCP measures missing FIPS 08000; "
+            f"e.g. {sorted(missing)[:3]}",
+        )
+    return CheckResult(
+        "SCP state rollups (gated): CO state row per measure",
+        True,
+        f"{len(primary_scp)} primary SCP measures all anchor to CO state "
+        f"({state_rows.height} state-level rows total)",
     )
 
 
@@ -215,8 +266,7 @@ def check_scp_ci_ordering(long: pl.DataFrame) -> CheckResult:
             "no CI-bearing rows present (empty SCP slice — vacuously ok)",
         )
     bad = scp.filter(
-        (pl.col("value_lo") > pl.col("value"))
-        | (pl.col("value") > pl.col("value_hi"))
+        (pl.col("value_lo") > pl.col("value")) | (pl.col("value") > pl.col("value_hi"))
     )
     if bad.height:
         return CheckResult(
@@ -321,6 +371,7 @@ def run_offline_checks(data_dir: Path) -> list[CheckResult]:
         check_wide_columns_are_primary_numeric(county_wide, catalog, "county"),
         check_wide_columns_are_primary_numeric(tract_wide, catalog, "tract"),
         check_scp_national_row_present(county_long, catalog),
+        check_scp_state_rollups_present(county_long, catalog),
         check_scp_ci_ordering(county_long),
         check_scp_trend_strings(county_long),
     ]

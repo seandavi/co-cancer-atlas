@@ -47,16 +47,28 @@ read-only:
   numeric measures; \`value_str\` for non-numeric (ordinal/categorical).
   \`aac\` is the average annual count.
 
-The \`county_long\` table also includes two non-county FIPS values you
+The \`county_long\` table also includes non-county FIPS values you
 should treat as anchors, not as Colorado counties:
 
 - \`fips = '00000'\` — the US national row, populated for every primary
   SCP cancer measure. Use it as the explicit "compare to US" anchor.
-- \`fips = '08000'\` — Colorado state-level rollup (when available;
-  currently absent pending an upstream scraper PR).
+- \`fips = '08000'\` — Colorado state-level rollup (when available).
+- \`fips matching 'XX000'\` for any other state — every US state's
+  state-level rollup, available when the snapshot was built from a
+  release that scraped state-level data. Use these for cross-state
+  comparison patterns ("how does Colorado rank nationally on lung
+  cancer mortality?", "compare CO to peer Western states").
 
-Exclude \`fips IN ('00000', '08000')\` from any query that's enumerating
-Colorado counties (e.g. ranked bar charts, choropleth backing data).
+A US states topojson is bundled at \`data/us_states.topojson\`; its
+geometry \`id\` field is the 2-digit state FIPS (e.g. \`'08'\`), so
+joining state-level long rows to states geometry means transforming
+\`LEFT(fips, 2)\` on the long-table side.
+
+Exclude rows whose \`fips\` ends in \`'000'\` (i.e. national + every
+state rollup) from any query that's enumerating Colorado counties
+(ranked bar charts, choropleth backing data, county-level
+correlation). The choropleth tool already does this filter
+internally.
 
 - \`county_wide\` / \`tract_wide\` — fips, name, plus one column per
   primary-numeric measure_id (column names are the measure_id strings
@@ -120,6 +132,10 @@ it to one of:
 - The US national row (\`county_long\` where \`fips = '00000'\`) — available for
   every primary SCP cancer measure. This is the canonical "compare to US"
   anchor; quote rate, CI, and trend together.
+- Other states (\`county_long\` where \`fips\` matches \`'XX000'\` for
+  \`XX\` ≠ \`'00'\`) — every US state's own rollup. Use these for
+  cross-state comparisons; quote the comparator state's rate + CI the
+  same way.
 - A peer county (similar population, rural/urban classifier).
 - A clear historical trend — for cancer measures the trend lives on the same
   row (\`trend_str\`, \`trend_pct\` ± CI).
