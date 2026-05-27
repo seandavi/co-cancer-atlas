@@ -31,13 +31,7 @@ def _catalog(units: list[str], is_numeric: list[bool]) -> pl.DataFrame:
     )
 
 
-_LONG_SCHEMA = {
-    "fips": pl.Utf8,
-    "measure_id": pl.Utf8,
-    "value": pl.Float64,
-    "value_str": pl.Utf8,
-    "aac": pl.Float64,
-}
+from co_cancer_atlas_etl.scp import LONG_SCHEMA as _LONG_SCHEMA
 
 
 def test_catalog_unit_enum_passes() -> None:
@@ -74,28 +68,27 @@ def test_fips_leading_zero_check() -> None:
     assert not verify.check_fips_leading_zeros_preserved(bad, "test").passed
 
 
+def _long_row(**overrides) -> dict:
+    """Build a long-table row with extension cols defaulted to None."""
+    base = {col: None for col in _LONG_SCHEMA}
+    base.update(overrides)
+    return base
+
+
 def test_long_measure_ids_in_catalog() -> None:
     cat = _catalog(["percent", "rate"], [True, True])
     good_long = pl.DataFrame(
-        {
-            "fips": ["08001"] * 3,
-            "measure_id": ["d.m0", "d.m1", "d.m1#sex=Female"],
-            "value": [1.0, 2.0, 3.0],
-            "value_str": [None] * 3,
-            "aac": [None] * 3,
-        },
+        [
+            _long_row(fips="08001", measure_id="d.m0", value=1.0),
+            _long_row(fips="08001", measure_id="d.m1", value=2.0),
+            _long_row(fips="08001", measure_id="d.m1#sex=Female", value=3.0),
+        ],
         schema=_LONG_SCHEMA,
     )
     assert verify.check_long_measure_ids_in_catalog(good_long, cat, "long").passed
 
     bad_long = pl.DataFrame(
-        {
-            "fips": ["08001"],
-            "measure_id": ["d.unknown"],
-            "value": [1.0],
-            "value_str": [None],
-            "aac": [None],
-        },
+        [_long_row(fips="08001", measure_id="d.unknown", value=1.0)],
         schema=_LONG_SCHEMA,
     )
     assert not verify.check_long_measure_ids_in_catalog(bad_long, cat, "long").passed
@@ -143,13 +136,7 @@ def _write_minimal_snapshot(tmp_path: Path, orphan: bool = False) -> None:
 
     long_id = "d.bogus" if orphan else "d.m0"
     pl.DataFrame(
-        {
-            "fips": ["08001"],
-            "measure_id": [long_id],
-            "value": [42.0],
-            "value_str": [None],
-            "aac": [None],
-        },
+        [_long_row(fips="08001", measure_id=long_id, value=42.0)],
         schema=_LONG_SCHEMA,
     ).write_parquet(tmp_path / "county_long.parquet")
 

@@ -158,6 +158,98 @@ def check_wide_columns_are_primary_numeric(
     )
 
 
+def check_scp_national_row_present(
+    long: pl.DataFrame, catalog: pl.DataFrame
+) -> CheckResult:
+    """Every primary SCP cancer measure should have a FIPS 00000 row.
+
+    The chat tool anchors comparisons to the US national row; if it's
+    missing for a measure, the prompt's "compare to national" pattern
+    silently degrades.
+    """
+    primary_scp = set(
+        catalog.filter(
+            pl.col("dataset").is_in(["scpincidence", "scpdeaths"])
+        )
+        .get_column("measure_id")
+        .to_list()
+    )
+    national_ids = set(
+        long.filter(pl.col("fips") == "00000")
+        .get_column("measure_id")
+        .to_list()
+    )
+    missing = primary_scp - {mid.split("#", 1)[0] for mid in national_ids}
+    if missing:
+        return CheckResult(
+            "every primary SCP measure has a national row",
+            False,
+            f"{len(missing)} measures missing FIPS 00000; "
+            f"e.g. {sorted(missing)[:3]}",
+        )
+    return CheckResult(
+        "every primary SCP measure has a national row",
+        True,
+        f"{len(primary_scp)} primary SCP measures all anchor to US",
+    )
+
+
+def check_scp_ci_ordering(long: pl.DataFrame) -> CheckResult:
+    """value_lo ≤ value ≤ value_hi where all three are populated.
+
+    Empty input passes — this check is meaningful only when SCP rows are
+    actually present. The companion ``check_scp_national_row_present``
+    catches the schema-broken case (catalog has SCP measures, long table
+    has none).
+    """
+    if "value_lo" not in long.columns:
+        return CheckResult(
+            "SCP rate CI ordering (lo ≤ value ≤ hi)",
+            False,
+            "long table missing value_lo column — schema is broken",
+        )
+    scp = long.filter(pl.col("value_lo").is_not_null())
+    if scp.height == 0:
+        return CheckResult(
+            "SCP rate CI ordering (lo ≤ value ≤ hi)",
+            True,
+            "no CI-bearing rows present (empty SCP slice — vacuously ok)",
+        )
+    bad = scp.filter(
+        (pl.col("value_lo") > pl.col("value"))
+        | (pl.col("value") > pl.col("value_hi"))
+    )
+    if bad.height:
+        return CheckResult(
+            "SCP rate CI ordering (lo ≤ value ≤ hi)",
+            False,
+            f"{bad.height} rows violate CI ordering",
+        )
+    return CheckResult(
+        "SCP rate CI ordering (lo ≤ value ≤ hi)",
+        True,
+        f"{scp.height} CI-bearing rows are well-ordered",
+    )
+
+
+def check_scp_trend_strings(long: pl.DataFrame) -> CheckResult:
+    """trend_str ∈ {stable, rising, falling, null}."""
+    valid = {"stable", "rising", "falling", None}
+    distinct = set(long.get_column("trend_str").unique().to_list())
+    unknown = distinct - valid
+    if unknown:
+        return CheckResult(
+            "trend_str ⊆ {stable, rising, falling, null}",
+            False,
+            f"unexpected trend strings: {sorted(str(v) for v in unknown)}",
+        )
+    return CheckResult(
+        "trend_str ⊆ {stable, rising, falling, null}",
+        True,
+        f"distinct values: {sorted(str(v) for v in distinct)}",
+    )
+
+
 def check_topojson_fips_joins(
     topo_path: Path, wide: pl.DataFrame, level: str
 ) -> CheckResult:
@@ -229,6 +321,9 @@ def run_offline_checks(data_dir: Path) -> list[CheckResult]:
         check_long_measure_ids_in_catalog(tract_long, catalog, "tract_long"),
         check_wide_columns_are_primary_numeric(county_wide, catalog, "county"),
         check_wide_columns_are_primary_numeric(tract_wide, catalog, "tract"),
+        check_scp_national_row_present(county_long, catalog),
+        check_scp_ci_ordering(county_long),
+        check_scp_trend_strings(county_long),
     ]
 
     co_topo = data_dir / "co_counties.topojson"

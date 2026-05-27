@@ -32,6 +32,12 @@ from .geo import (
     write_topojson,
 )
 from .pivot import apply_state_values, build_long_for_level, build_wide
+from .scp import (
+    DEFAULT_SCP_RELEASE,
+    ECCO_CANCER_DATASETS,
+    LONG_SCHEMA,
+    build_scp,
+)
 
 DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 
@@ -65,17 +71,41 @@ def _region_names_from_tracts(tracts: list[dict]) -> pl.DataFrame:
 async def snapshot(
     data_dir: Path = DEFAULT_DATA_DIR,
     concurrency: int = 8,
+    scp_release: str = DEFAULT_SCP_RELEASE,
 ) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
 
     overall_start = time.time()
 
     # 1. Catalog. Every later step reads this; pull it first.
+    #
+    # Cancer datasets are sourced from the SCP scraper release (see
+    # scp.py), not ECCO. Drop ECCO's cancer rows up front so the pivot
+    # pass doesn't fan out tens of thousands of fips-value calls we
+    # don't need, and so the combined catalog has a single owner per
+    # measure_id.
     async with AsyncEccoClient(concurrency=concurrency) as ecco:
         raw_catalog = await ecco.catalog()
-    catalog_df = build_catalog(raw_catalog)
+    ecco_catalog = build_catalog(raw_catalog).filter(
+        ~pl.col("dataset").is_in(list(ECCO_CANCER_DATASETS))
+    )
+    print(
+        f"[snapshot] catalog (ECCO, post-filter): {ecco_catalog.height} "
+        f"measures (dropped ECCO scp* datasets — sourced from SCP release)"
+    )
+
+    print(f"[snapshot] SCP release: {scp_release}")
+    scp_catalog, scp_long = await asyncio.to_thread(build_scp, scp_release)
+    print(
+        f"[snapshot] catalog (SCP): {scp_catalog.height} measures, "
+        f"{scp_long.height} long rows"
+    )
+
+    catalog_df = pl.concat(
+        [ecco_catalog, scp_catalog], how="vertical_relaxed"
+    ).sort(["level", "dataset", "measure"])
     write_catalog(catalog_df, data_dir / "catalog.parquet")
-    print(f"[snapshot] catalog: {catalog_df.height} measures")
+    print(f"[snapshot] catalog (combined): {catalog_df.height} measures")
 
     # 2. Geometry + values, fanned out.
     async with AsyncEccoClient(concurrency=concurrency) as ecco:
@@ -104,12 +134,22 @@ async def snapshot(
         }
 
         # 3. Long + wide, per level.
+        #
+        # SCP long rows are county-level only. ECCO's pivot pass still
+        # produces all the non-cancer county + tract long rows. We
+        # concatenate SCP into the county frame after the ECCO pull so
+        # both sources land in one ``county_long.parquet``.
         states_by_level: dict[str, dict[str, float]] = {}
         for level in ("county", "tract"):
             t0 = time.time()
             long_df, states = await build_long_for_level(
                 ecco, catalog_df, level, progress=True
             )
+            if level == "county":
+                long_df = pl.concat(
+                    [long_df, scp_long.select(*LONG_SCHEMA.keys())],
+                    how="vertical_relaxed",
+                ).sort(["measure_id", "fips"])
             wide_df = build_wide(long_df, catalog_df, level, region_names[level])
             long_df.write_parquet(
                 data_dir / f"{level}_long.parquet",
@@ -156,8 +196,24 @@ def main() -> None:
         default=8,
         help="API concurrency cap (default: 8)",
     )
+    parser.add_argument(
+        "--scp-release",
+        type=str,
+        default=DEFAULT_SCP_RELEASE,
+        help=(
+            "SCP scraper release tag (default: %(default)s). Format "
+            "YYYY-MM-DD, matching the GitHub release tag at "
+            "https://github.com/seandavi/state-cancer-profile-scraper/releases"
+        ),
+    )
     args = parser.parse_args()
-    asyncio.run(snapshot(data_dir=args.data_dir, concurrency=args.concurrency))
+    asyncio.run(
+        snapshot(
+            data_dir=args.data_dir,
+            concurrency=args.concurrency,
+            scp_release=args.scp_release,
+        )
+    )
 
 
 if __name__ == "__main__":
