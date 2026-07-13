@@ -25,13 +25,12 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
-from collections.abc import Iterable
 from typing import Any
 
 import polars as pl
 
-from .fetch import AsyncEccoClient
 from .catalog import factor_suffix
+from .fetch import AsyncEccoClient
 
 
 def _enumerate_factor_combos(
@@ -202,19 +201,28 @@ async def build_long_for_level(
                 f"({len(all_rows)} rows)"
             )
 
-    long_schema = {
-        "fips": pl.Utf8,
-        "measure_id": pl.Utf8,
-        "value": pl.Float64,
-        "value_str": pl.Utf8,
-        "aac": pl.Float64,
-    }
+    # Schema is the SCP-extended one. ECCO rows have null in every
+    # cancer-specific extension column; SCP rows populate them. This keeps
+    # both sources in a single, consistent long table per SPEC §4.
+    from .scp import LONG_SCHEMA
+
     if not all_rows:
-        long_df = pl.DataFrame(schema=long_schema)
+        long_df = pl.DataFrame(schema=LONG_SCHEMA)
     else:
-        long_df = pl.DataFrame(all_rows, schema=long_schema).sort(
-            ["measure_id", "fips"]
+        long_df = pl.DataFrame(
+            all_rows, schema={k: LONG_SCHEMA[k] for k in (
+                "fips", "measure_id", "value", "value_str", "aac"
+            )}
         )
+        # Pad with the extension columns so concat(SCP, ECCO) is uniform.
+        extension_cols = [
+            pl.lit(None, dtype=LONG_SCHEMA[c]).alias(c)
+            for c in LONG_SCHEMA
+            if c not in ("fips", "measure_id", "value", "value_str", "aac")
+        ]
+        long_df = long_df.with_columns(extension_cols).select(
+            *LONG_SCHEMA.keys()
+        ).sort(["measure_id", "fips"])
     return long_df, states
 
 

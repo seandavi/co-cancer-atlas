@@ -68,7 +68,42 @@ once per warm Worker isolate; queries finish in single-digit ms.
 
 ---
 
-## 3. Data source: the ECCO API
+## 3. Data sources
+
+### 3.1 Cancer incidence & mortality — State Cancer Profiles (NCI)
+
+Sourced via the monthly release of [`seandavi/state-cancer-profile-scraper`][scp],
+which scrapes the NCI [State Cancer Profiles][scp-site] site and publishes
+gzipped CSVs on GitHub Releases. The ETL reads the release CSV in place via
+DuckDB httpfs — no local download — filters to Colorado counties
+(`state_fips='08'`) plus the US national rollup (FIPS `00000`), and emits one
+long-table row per (cancer × age × sex × race × stage × fips). Per-row the
+SCP CSV carries strictly more than ECCO did:
+
+- 95% CI on the age-adjusted rate (`lower_ci_rate`, `upper_ci_rate`)
+- Recent 5-year trend direction, slope, and CI on the slope — inline on
+  the same row, eliminating the prior `scpincidencetrend.*` /
+  `scpdeathstrend.*` join pattern
+- Rural / urban classifier from the 2023 USDA continuum codes
+- Percent of cases diagnosed at late stage (incidence only)
+- A national row per (cancer × factor combo) at FIPS `00000`, giving every
+  measure a built-in "compare to US" anchor
+
+Colorado state-level rollups (FIPS `08000`) are not yet present in the
+upstream release; pending [scraper PR #10][scraper-pr] which adds
+`areatype` iteration to the scrape loop. Until that lands and a new
+release ships, the chat tool should anchor SCP measures to the national
+row rather than the state row.
+
+The SCP release tag is pinned in `etl/src/co_cancer_atlas_etl/scp.py`
+(`DEFAULT_SCP_RELEASE`) so snapshots are reproducible; bump alongside
+each ETL refresh.
+
+[scp]: https://github.com/seandavi/state-cancer-profile-scraper
+[scp-site]: https://statecancerprofiles.cancer.gov/
+[scraper-pr]: https://github.com/seandavi/state-cancer-profile-scraper/pull/10
+
+### 3.2 Everything else — the ECCO API
 
 GET-only, unauthenticated. Interactive docs at `/docs`. Relevant endpoints:
 
@@ -152,15 +187,27 @@ Non-default combinations append a sorted suffix:
 `"{dataset}.{measure}#race=Black NH;sex=Female"`.
 
 ### `{level}_long.parquet`  (`county_long`, `tract_long`)
-Tidy long; complete record across all factor combinations the API has data for.
+Tidy long; complete record across all factor combinations the source has data for.
 
 | column | type | notes |
 |---|---|---|
-| `fips` | string | region key (5-digit county, 11-digit tract) |
+| `fips` | string | region key (5-digit county, 11-digit tract). Cancer rows additionally carry FIPS `00000` (US national) and, when present, `08000` (CO state). |
 | `measure_id` | string | FK to catalog (includes factor suffix where applicable) |
 | `value` | double | nullable; populated when measure is numeric |
 | `value_str` | string | nullable; populated when measure is non-numeric (ordinal/rank/etc.) |
 | `aac` | double | nullable; average annual count |
+| `value_lo` | double | nullable; 95% CI lower bound on rate (SCP cancer rows only) |
+| `value_hi` | double | nullable; 95% CI upper bound on rate (SCP cancer rows only) |
+| `trend_str` | string | nullable; recent trend direction — one of `stable`, `rising`, `falling` (SCP cancer rows only) |
+| `trend_pct` | double | nullable; recent 5-year trend in rate, %/year (SCP cancer rows only) |
+| `trend_pct_lo` | double | nullable; 95% CI lower bound on trend slope (SCP cancer rows only) |
+| `trend_pct_hi` | double | nullable; 95% CI upper bound on trend slope (SCP cancer rows only) |
+| `rural_urban` | string | nullable; 2023 USDA rural/urban classifier — `Urban` or `Rural` (SCP cancer rows only) |
+| `pct_late_stage` | double | nullable; % of cases diagnosed at late stage (SCP incidence rows only) |
+
+The cancer-specific extension columns (`value_lo` … `pct_late_stage`) are
+all null on non-cancer rows. They populate only for primary measures from
+`scpincidence` and `scpdeaths` (plus their factor combinations).
 
 ### `{level}_wide.parquet`  (`county_wide`, `tract_wide`)
 Pivoted primary-series matrix for correlation/clustering. One row per region.
@@ -364,5 +411,15 @@ Profiles for Denver County / All Cancer Sites incidence:
 | value (rate / 100k) | 404.1 | 400.3 | 0.9% |
 | aac (annual count)  | 2746.0 | 2765.0 | 0.7% |
 
-The ≈1% delta is attributable to year-range differences between snapshots.
-The probe re-runs as part of `verify.py` to catch drift on future refreshes.
+The ≈1% delta was attributable to year-range differences between snapshots.
+
+### SCP migration — resolved Phase 1.6 (2026-05-26)
+
+Cancer datasets (`scpincidence.*`, `scpdeaths.*`) no longer come from
+ECCO; they are sourced directly from the State Cancer Profiles scraper
+release (see §3.1). The ECCO `scpincidencetrend.*` / `scpdeathstrend.*`
+datasets are dropped entirely — trend lives inline on the rate row now.
+The aac probe was retargeted from "ECCO vs SCP" (no longer meaningful,
+same source) to "snapshot vs published SCP figure" (catches stale
+release pins and schema regressions). Tolerance tightened from 5% to
+1% accordingly.

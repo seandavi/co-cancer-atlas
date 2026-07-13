@@ -9,8 +9,19 @@ plus the rules that are easy to get wrong.
 A static SPA (Vite + React + TypeScript) that explores Colorado cancer data
 entirely in the browser using DuckDB-WASM over a precomputed Parquet snapshot, with
 Vega-Lite for all visualizations (including the choropleth via `geoshape`). Data
-originates from the public ECCO API (`https://api.coe-ecco.org`, GET-only, no auth).
+comes from two public sources:
+
+- **Cancer incidence & mortality** — the [SCP scraper release][scp] (monthly
+  GitHub Release of NCI State Cancer Profiles data). Includes CIs on rate,
+  inline trend with CI on slope, rural/urban classifier, and a US national
+  anchor row at FIPS `00000`.
+- **Everything else** (sociodemographics, screening, environment,
+  disparities, etc.) — the public ECCO API (`https://api.coe-ecco.org`,
+  GET-only, no auth).
+
 An offline Python ETL (`etl/`) builds the snapshot. There is no application server.
+
+[scp]: https://github.com/seandavi/state-cancer-profile-scraper
 
 ## Build in phases
 
@@ -66,6 +77,5 @@ Changing a column name means updating both sides and the spec in the same change
 
 ## Unresolved
 
-The `aac` field's exact meaning is provisional (assumed annual average count).
-Phase 1 `verify.py` must confirm it against a published State Cancer Profiles value
-before any UI relies on it. See `SPEC.md` §9.
+(none — `aac` meaning and the ECCO→SCP migration for cancer data are both
+resolved in `SPEC.md` §9.)
