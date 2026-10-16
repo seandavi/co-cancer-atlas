@@ -11,7 +11,6 @@ Run:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
 from dataclasses import dataclass
@@ -67,9 +66,7 @@ def check_catalog_units(catalog: pl.DataFrame) -> CheckResult:
 
 
 def check_is_numeric_matches_unit(catalog: pl.DataFrame) -> CheckResult:
-    expected = catalog.with_columns(
-        expected=pl.col("unit").is_in(NUMERIC_UNITS)
-    )
+    expected = catalog.with_columns(expected=pl.col("unit").is_in(NUMERIC_UNITS))
     mismatches = expected.filter(pl.col("is_numeric") != pl.col("expected"))
     if mismatches.height:
         return CheckResult(
@@ -120,7 +117,9 @@ def check_long_measure_ids_in_catalog(
     long: pl.DataFrame, catalog: pl.DataFrame, label: str
 ) -> CheckResult:
     catalog_ids = set(catalog.get_column("measure_id").to_list())
-    long_primary_ids = {mid.split("#", 1)[0] for mid in long.get_column("measure_id").to_list()}
+    long_primary_ids = {
+        mid.split("#", 1)[0] for mid in long.get_column("measure_id").to_list()
+    }
     orphans = long_primary_ids - catalog_ids
     if orphans:
         return CheckResult(
@@ -139,9 +138,9 @@ def check_wide_columns_are_primary_numeric(
     wide: pl.DataFrame, catalog: pl.DataFrame, level: str
 ) -> CheckResult:
     primary_numeric = set(
-        catalog.filter(
-            (pl.col("level") == level) & pl.col("is_numeric")
-        ).get_column("measure_id").to_list()
+        catalog.filter((pl.col("level") == level) & pl.col("is_numeric"))
+        .get_column("measure_id")
+        .to_list()
     )
     wide_cols = set(wide.columns) - {"fips", "name"}
     extras = wide_cols - primary_numeric
@@ -149,7 +148,8 @@ def check_wide_columns_are_primary_numeric(
         return CheckResult(
             f"{level}_wide columns ⊆ primary-numeric catalog ids",
             False,
-            f"{len(extras)} columns aren't primary-numeric ids; e.g. {sorted(extras)[:3]}",
+            f"{len(extras)} columns aren't primary-numeric ids; "
+            f"e.g. {sorted(extras)[:3]}",
         )
     return CheckResult(
         f"{level}_wide columns ⊆ primary-numeric catalog ids",

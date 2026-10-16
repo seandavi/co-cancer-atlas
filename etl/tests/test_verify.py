@@ -109,7 +109,9 @@ def test_wide_columns_check() -> None:
     assert verify.check_wide_columns_are_primary_numeric(good_wide, cat, "county").passed
 
     bad_wide = pl.DataFrame({"fips": ["08001"], "name": ["x"], "d.unknown": [1.0]})
-    assert not verify.check_wide_columns_are_primary_numeric(bad_wide, cat, "county").passed
+    assert not verify.check_wide_columns_are_primary_numeric(
+        bad_wide, cat, "county"
+    ).passed
 
 
 def test_topojson_fips_join_check(tmp_path: Path) -> None:
@@ -137,8 +139,10 @@ def test_topojson_fips_join_check(tmp_path: Path) -> None:
 
 
 def _write_minimal_snapshot(tmp_path: Path, orphan: bool = False) -> None:
-    cat = _catalog(["percent", "ordinal"] if not orphan else ["percent"],
-                   [True, False] if not orphan else [True])
+    cat = _catalog(
+        ["percent", "ordinal"] if not orphan else ["percent"],
+        [True, False] if not orphan else [True],
+    )
     cat.write_parquet(tmp_path / "catalog.parquet")
 
     long_id = "d.bogus" if orphan else "d.m0"

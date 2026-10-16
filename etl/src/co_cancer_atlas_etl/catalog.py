@@ -20,9 +20,7 @@ from typing import Any
 import polars as pl
 
 # Units that admit Pearson correlation and clustering (SPEC §3).
-NUMERIC_UNITS: frozenset[str] = frozenset(
-    {"percent", "rate", "count", "dollar_amount"}
-)
+NUMERIC_UNITS: frozenset[str] = frozenset({"percent", "rate", "count", "dollar_amount"})
 
 # Schema mirrors SPEC §4 `catalog.parquet`, plus `dataset_label` for
 # joining to the download-all CSVs (whose path uses the human label).
@@ -95,10 +93,7 @@ def build_catalog(raw: dict[str, Any]) -> pl.DataFrame:
                     }
                 )
 
-    return (
-        pl.DataFrame(rows, schema=SCHEMA)
-        .sort(by=["level", "dataset", "measure"])
-    )
+    return pl.DataFrame(rows, schema=SCHEMA).sort(by=["level", "dataset", "measure"])
 
 
 def write_catalog(df: pl.DataFrame, out_path: Path) -> None:

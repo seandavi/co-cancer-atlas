@@ -119,4 +119,4 @@ def test_build_catalog_is_deterministic() -> None:
 
 def test_numeric_units_covers_spec_set() -> None:
     # SPEC §3 lists these four as the eligibility set for correlation/clustering.
-    assert NUMERIC_UNITS == {"percent", "rate", "count", "dollar_amount"}
+    assert {"percent", "rate", "count", "dollar_amount"} == NUMERIC_UNITS

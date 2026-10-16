@@ -14,7 +14,6 @@ from co_cancer_atlas_etl.geo import (
     tracts_to_feature_collection,
 )
 
-
 _GEOM_A = json.dumps(
     {
         "type": "Polygon",
