@@ -28,13 +28,13 @@ BASE_URL = "https://api.coe-ecco.org"
 # (Full set also includes sociodemographics, economy, environment,
 #  housingtrans, disparities, ucccresponders.)
 CANCER_DATASETS = [
-    "scpincidence",          # State Cancer Profiles: incidence rates
-    "scpdeaths",             # State Cancer Profiles: mortality rates
-    "scpincidencetrend",     # incidence trend over time
-    "scpdeathstrend",        # mortality trend over time
+    "scpincidence",  # State Cancer Profiles: incidence rates
+    "scpdeaths",  # State Cancer Profiles: mortality rates
+    "scpincidencetrend",  # incidence trend over time
+    "scpdeathstrend",  # mortality trend over time
     "cancerdisparitiesindex",
-    "rfandscreening",        # risk factors & screening (smoking, mammography, etc.)
-    "hpv",                   # HPV vaccination (has a 'sex' factor)
+    "rfandscreening",  # risk factors & screening (smoking, mammography, etc.)
+    "hpv",  # HPV vaccination (has a 'sex' factor)
     "radon",
     "uvexposure",
 ]
@@ -47,7 +47,7 @@ class EccoClient:
     def close(self) -> None:
         self._http.close()
 
-    def __enter__(self) -> "EccoClient":
+    def __enter__(self) -> EccoClient:
         return self
 
     def __exit__(self, *exc: Any) -> None:
@@ -162,13 +162,17 @@ if __name__ == "__main__":
             resp = ecco.fips_value("scpincidence", measure)
             vals = resp.get("values", {})
             print(f"\n'{measure}' ({resp.get('unit')}) — source: {resp.get('source')}")
-            print(f"  state value: {resp.get('state')}, "
-                  f"range {resp.get('min')}–{resp.get('max')} across "
-                  f"{len(vals)} counties")
+            print(
+                f"  state value: {resp.get('state')}, "
+                f"range {resp.get('min')}-{resp.get('max')} across "
+                f"{len(vals)} counties"
+            )
 
         # 3. Resolve a county name -> FIPS, then dump its full profile.
         fips = ecco.county_fips_lookup().get("Denver")
         if fips:
             profile = ecco.by_county(fips)
-            print(f"\nDenver ({fips}) categories: "
-                  f"{list(profile.get('categories', {}).keys())}")
+            print(
+                f"\nDenver ({fips}) categories: "
+                f"{list(profile.get('categories', {}).keys())}"
+            )

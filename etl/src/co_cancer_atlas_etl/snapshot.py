@@ -93,10 +93,7 @@ async def snapshot(
             object_name="tracts",
             out_path=data_dir / "co_tracts.topojson",
         )
-        print(
-            f"[snapshot] topojson: {len(counties)} counties, "
-            f"{len(tracts)} tracts"
-        )
+        print(f"[snapshot] topojson: {len(counties)} counties, {len(tracts)} tracts")
 
         region_names = {
             "county": _region_names_from_counties(counties),
@@ -131,9 +128,7 @@ async def snapshot(
     # 4. Backfill catalog.state_value from what pivot collected.
     catalog_with_state = apply_state_values(catalog_df, states_by_level)
     write_catalog(catalog_with_state, data_dir / "catalog.parquet")
-    populated = catalog_with_state.filter(
-        pl.col("state_value").is_not_null()
-    ).height
+    populated = catalog_with_state.filter(pl.col("state_value").is_not_null()).height
     print(
         f"[snapshot] catalog state_value: {populated}/{catalog_with_state.height} "
         f"measures backfilled"

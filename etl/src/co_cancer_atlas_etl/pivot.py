@@ -1,4 +1,4 @@
-"""Pull the long table from /fips-value, one call per (measure × factor combo).
+"""Pull the long table from /fips-value, one call per (measure x factor combo).
 
 The catalog is the single source of truth for what measures exist and
 what factor values they admit (SPEC §3). For each catalog row, we
@@ -25,13 +25,12 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
-from collections.abc import Iterable
 from typing import Any
 
 import polars as pl
 
-from .fetch import AsyncEccoClient
 from .catalog import factor_suffix
+from .fetch import AsyncEccoClient
 
 
 def _enumerate_factor_combos(
@@ -59,11 +58,7 @@ def _non_default_subset(
     combo: dict[str, str],
 ) -> dict[str, str]:
     """Project a combo to only the factors that differ from their default."""
-    return {
-        k: v
-        for k, v in combo.items()
-        if v != factors_def[k]["default"]
-    }
+    return {k: v for k, v in combo.items() if v != factors_def[k]["default"]}
 
 
 def _measure_id_for_combo(
@@ -141,7 +136,7 @@ async def build_long_for_level(
 ) -> tuple[pl.DataFrame, dict[str, float]]:
     """Build long table + per-measure state values for one level.
 
-    Enumerates every (measure × factor combo) up front and dispatches
+    Enumerates every (measure x factor combo) up front and dispatches
     them all into one `asyncio.as_completed` pool. True throughput is
     bounded by the client's semaphore — a slow combo in one measure
     no longer stalls every other measure.
@@ -179,11 +174,10 @@ async def build_long_for_level(
 
     all_rows: list[dict[str, Any]] = []
     states: dict[str, float] = {}
-    completed = 0
     total = len(tasks)
     coros = [fetch_one(c, f, k) for c, f, k in tasks]
 
-    for done in asyncio.as_completed(coros):
+    for completed, done in enumerate(asyncio.as_completed(coros), start=1):
         cat_row, factors_def, combo, resp = await done
         rows, state = _rows_from_response(
             cat_row["dataset"],
@@ -195,12 +189,8 @@ async def build_long_for_level(
         all_rows.extend(rows)
         if state is not None:
             states.setdefault(cat_row["measure_id"], state)
-        completed += 1
         if progress and (completed % 500 == 0 or completed == total):
-            print(
-                f"[pivot:{level}] {completed}/{total} fetches "
-                f"({len(all_rows)} rows)"
-            )
+            print(f"[pivot:{level}] {completed}/{total} fetches ({len(all_rows)} rows)")
 
     long_schema = {
         "fips": pl.Utf8,
@@ -212,9 +202,7 @@ async def build_long_for_level(
     if not all_rows:
         long_df = pl.DataFrame(schema=long_schema)
     else:
-        long_df = pl.DataFrame(all_rows, schema=long_schema).sort(
-            ["measure_id", "fips"]
-        )
+        long_df = pl.DataFrame(all_rows, schema=long_schema).sort(["measure_id", "fips"])
     return long_df, states
 
 
@@ -226,9 +214,7 @@ def build_wide(
 ) -> pl.DataFrame:
     """Pivot the primary, numeric subset into a (fips, name, <measure_ids>) matrix."""
     primary_numeric_ids = set(
-        catalog_df.filter(
-            (pl.col("level") == level) & pl.col("is_numeric")
-        )
+        catalog_df.filter((pl.col("level") == level) & pl.col("is_numeric"))
         .get_column("measure_id")
         .to_list()
     )
@@ -251,15 +237,13 @@ def apply_state_values(
 ) -> pl.DataFrame:
     """Fill catalog `state_value` from per-level state lookups."""
     flat = {
-        (level, mid): v
-        for level, m in states_by_level.items()
-        for mid, v in m.items()
+        (level, mid): v for level, m in states_by_level.items() for mid, v in m.items()
     }
     return catalog_df.with_columns(
-        pl.struct(["level", "measure_id"]).map_elements(
+        pl.struct(["level", "measure_id"])
+        .map_elements(
             lambda s: flat.get((s["level"], s["measure_id"])),
             return_dtype=pl.Float64,
-        ).alias("state_value")
+        )
+        .alias("state_value")
     )
-
-

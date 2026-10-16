@@ -37,8 +37,8 @@ SCP_REFERENCE_URL = (
     "?stateFIPS=08&areatype=county&cancer=001&race=00&sex=0"
     "&age=001&stage=999&year=0&type=incd&output=1"
 )
-SCP_REFERENCE_RATE = 400.3      # cases per 100,000, age-adjusted
-SCP_REFERENCE_COUNT = 2765.0    # average annual count
+SCP_REFERENCE_RATE = 400.3  # cases per 100,000, age-adjusted
+SCP_REFERENCE_COUNT = 2765.0  # average annual count
 
 # Allow ~5% drift — published year ranges can shift between ECCO and SCP.
 TOLERANCE = 0.05
@@ -70,10 +70,14 @@ def probe() -> int:
     print(f"state reference : {state}")
     print()
     print(f"{'':24} {'ECCO':>10} {'SCP':>10} {'delta':>10}")
-    print(f"{'value (rate / 100k)':24} {value:>10.1f} "
-          f"{SCP_REFERENCE_RATE:>10.1f} {rate_delta:>9.1%}")
-    print(f"{'aac (annual count)':24} {aac:>10.1f} "
-          f"{SCP_REFERENCE_COUNT:>10.1f} {count_delta:>9.1%}")
+    print(
+        f"{'value (rate / 100k)':24} {value:>10.1f} "
+        f"{SCP_REFERENCE_RATE:>10.1f} {rate_delta:>9.1%}"
+    )
+    print(
+        f"{'aac (annual count)':24} {aac:>10.1f} "
+        f"{SCP_REFERENCE_COUNT:>10.1f} {count_delta:>9.1%}"
+    )
     print()
     print(f"SCP reference URL: {SCP_REFERENCE_URL}")
     print()

@@ -68,9 +68,7 @@ class AsyncEccoClient:
         reraise=True,
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(RETRY_ATTEMPTS),
-        wait=wait_exponential(
-            multiplier=RETRY_MIN_SECONDS, max=RETRY_MAX_SECONDS
-        ),
+        wait=wait_exponential(multiplier=RETRY_MIN_SECONDS, max=RETRY_MAX_SECONDS),
     )
     async def _get_json(self, path: str, **params: Any) -> Any:
         async with self._sem:
@@ -83,9 +81,7 @@ class AsyncEccoClient:
         reraise=True,
         retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(RETRY_ATTEMPTS),
-        wait=wait_exponential(
-            multiplier=RETRY_MIN_SECONDS, max=RETRY_MAX_SECONDS
-        ),
+        wait=wait_exponential(multiplier=RETRY_MIN_SECONDS, max=RETRY_MAX_SECONDS),
     )
     async def _get_text(self, path: str, **params: Any) -> str:
         async with self._sem:
@@ -134,9 +130,7 @@ class AsyncEccoClient:
     async def as_csv_text(
         self, dataset: str, level: str = "county", measure: str | None = None
     ) -> str:
-        return await self._get_text(
-            f"/stats/{level}/{dataset}/as-csv", measure=measure
-        )
+        return await self._get_text(f"/stats/{level}/{dataset}/as-csv", measure=measure)
 
     # ----- bulk helpers (where async + concurrency pay off) --------------
 
